@@ -1,0 +1,209 @@
+---
+title: "Introduction to Leaflet"
+author: "Tyler Bonnell"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+pacman::p_load(leaflet,
+               leaflet.extras,
+               RColorBrewer,
+               sp, sf,
+               tidyverse,
+               ggmap) # ggmap::geocode() to give character address --> output = long/latitude coordinates
+
+```
+
+# Chapter 1: Setting Up Interactive Maps
+
+```{r, Chapter 1}
+
+# Create/load data:
+dc_hq <- tibble(hq = c("Datacamp - NYC", "Datacamp - Belgium"),
+                lon = c(-73.98575, 4.717863),
+                lat = c(40.74856, 50.881363))
+
+# Exercise
+dc_hq %>%
+leaflet(options = leafletOptions(dragging = TRUE)) %>%
+  addProviderTiles("CartoDB") %>%
+  addMarkers(lng = dc_hq$lon, lat = dc_hq$lat, popup = dc_hq$hq)
+
+
+# Setting Default Map View:
+
+## Focus on a single point: 
+# setView(lng, lat, zoom)
+
+## Restrict map to a box: 
+# fitBounds(lng1, lat1, lng2, lat2) -- lng#/lat# describe two corners of the box which will restrict the map
+
+##  Once user has dragged past a certain point, bounce them back to area of focus: 
+# leaflet(options = leafletOptions(dragging = TRUE)) %>% setMaxBounds(lng1, lat1, lng2, lat2)
+
+rm(dc_hq)
+```
+
+# Chapter 2: Interactive Web Map of California 4 Year Colleges
+
+IPEDS Dataset:
+  - name: Name of each college
+  - lng
+  - lat
+  - state
+  - sector_label: Public, Private, or For Profit
+
+Exercise: 
+    - Map all Colleges
+    - Use circle markers instead of pins
+    - Color code markers by ipeds$sector_label
+
+```{r, Chapter 2}
+
+# Create/load data:
+ipeds <- read_csv("Data/Leaflet/ipeds.csv") 
+
+# Color Palettes
+RColorBrewer::display.brewer.all()
+
+# Creating our own Leaflet Color Palettes
+pal <- leaflet::colorFactor(palette = c("red", "blue", "brown"),
+                            levels = c("Public", "Private", "For-Profit"))
+
+# leaflet::colorNumeric(palette = "", domain = #, reverse = T/F) # To make numeric/continuous leaflet color palettes
+
+# Exercise
+ipeds %>%
+  leaflet() %>%
+  addProviderTiles("CartoDB") %>%
+  addCircleMarkers(radius = 2, # circles instead of pin markers (via addMarkers())
+                   lng = ~lng,
+                   lat = ~lat,
+                   popup = ~paste0("<b>", name, "</b>", 
+                                   "<br/>", sector_label),
+                   color = ~pal(sector_label),
+                   opacity = 0.5) %>% # can use label = instead of popup = if you don't want to click.
+addLegend(position = "bottomright", pal = pal, 
+          opacity = 0.5, title = "Type of College",
+          values = c("Public", "Private", "For-Profit"))
+
+
+```
+
+
+# Chapter 3: Leaflet Extras & IPEDS Part II
+  - leaflet.extras::addSearchOSM() -- make map searchable
+  - leaflet.extras::addReverseSearchOSM() -- geocode w/ mouse click
+  - leaflet.extras::addResetMapButton() -- reset map view
+  
+```{r, Chapter 3}
+
+# Example 
+# leaflet() %>%
+#   addTiles() %>%
+#   leaflet.extras::addSearchOSM() %>% # Adds search bar (data entered: automatically zooms us into the location)
+#   leaflet.extras::addReverseSearchOSM() %>% # Gives us lat/lon of searched point
+#   addResetMapButton() # Reset Icon below search (quickly return to default view)
+
+# IPEDS Part II
+(map <- ipeds %>%
+  leaflet() %>%
+   addTiles(group = "OSM") %>%
+     addProviderTiles("CartoDB", group = "Carto") %>%
+     addProviderTiles("Esri", group = "Esri") %>% ## Three base maps for toggling via addLayersControl(basegroups = c())
+  setView(lat = 39.8282, lng = -98.5795, zoom =3) %>% # Center of middle of the US
+      addLegend(position = "bottomright", pal = pal, 
+          opacity = 0.5, title = "Type of College",
+          values = c("Public", "Private", "For-Profit")) %>%
+   addCircleMarkers(data = ipeds[ipeds$sector_label == "Public", ], ## Three circle markers for toggling via addLayersControl(overlayGroups = c())
+                    group = "Public",
+                    lat = ~lat,
+                    lng = ~lng,
+                    radius = 2,
+                    opacity = 0.5,
+                    color = ~pal(sector_label),
+                    popup = ~paste0("<b>", htmltools::htmlEscape(name), "</b>",
+                                   "<br/>", sector_label)) %>%
+   addCircleMarkers(data = ipeds[ipeds$sector_label == "Private", ],
+                    group = "Private",
+                    lat = ~lat,
+                    lng = ~lng,
+                    radius = 2,
+                    opacity = 0.5,
+                    color = ~pal(sector_label),
+                    popup = ~paste0("<b>", htmltools::htmlEscape(name), "</b>",
+                                   "<br/>", sector_label)) %>%
+   addCircleMarkers(data = ipeds[ipeds$sector_label == "For-Profit", ],
+                    group = "For-Profit",
+                    lat = ~lat,
+                    lng = ~lng,
+                    radius = 2,
+                    opacity = 0.5,
+                    color = ~pal(sector_label),
+                    popup = ~paste0("<b>", htmltools::htmlEscape(name), "</b>",
+                                   "<br/>", sector_label)) %>%
+   addLayersControl(., 
+                    overlayGroups = c("Public", "Private", "For-Profit"), ## Overlayed Circle Markers
+                    baseGroups = c("OSM", "Carto", "Esri")) %>% ## Overlayed Base Maps
+   leaflet.extras::addSearchFeatures(.,
+                                     searchFeaturesOptions(zoom = 10),
+     targetGroups = c("Public", "Private", "For-Profit")) %>% # Add Search Bar (that searches and zooms in our data specifically)
+   leaflet.extras::addResetMapButton()) # Add button to revert back to default zoom
+   
+
+```
+
+# Chapter 4: Mapping Polygons
+- Looking at which colleges reside in America's most wealthy zip codes
+
+```{r, Chapter 4}
+load("Data/Leaflet/wealthiest_zips.Rda")
+
+wealthy_zips <- sf::st_as_sf(wealthy_zips) %>%
+  sf::st_transform(., 4326)
+
+wealthy_zips %>%
+  leaflet() %>%
+  addTiles("OSM", group = "OSM") %>%
+  addProviderTiles("CartoDB", group = "Carto") %>%
+  addProviderTiles("Esri", group = "Esri") %>%
+  addPolygons(weight = 1, fillOpacity = 0.7, 
+              color = "green", group = "Wealthy Zipcodes",
+              label = ~paste0("Mean Income: ", "$",as.character(prettyNum(mean_income, big.mark =","))),
+              highlightOptions = highlightOptions(weight = 5, color = "white", bringToFront = TRUE)) %>%
+  addCircleMarkers(data = ipeds[ipeds$sector_label == "Public", ], ## Three circle markers for toggling via addLayersControl(overlayGroups = c())
+                    group = "Public",
+                    lat = ~lat,
+                    lng = ~lng,
+                    radius = 2,
+                    opacity = 0.5,
+                    color = ~pal(sector_label),
+                    popup = ~paste0("<b>", htmltools::htmlEscape(name), "</b>",
+                                   "<br/>", sector_label)) %>%
+   addCircleMarkers(data = ipeds[ipeds$sector_label == "Private", ],
+                    group = "Private",
+                    lat = ~lat,
+                    lng = ~lng,
+                    radius = 2,
+                    opacity = 0.5,
+                    color = ~pal(sector_label),
+                    popup = ~paste0("<b>", htmltools::htmlEscape(name), "</b>",
+                                   "<br/>", sector_label)) %>%
+   addCircleMarkers(data = ipeds[ipeds$sector_label == "For-Profit", ],
+                    group = "For-Profit",
+                    lat = ~lat,
+                    lng = ~lng,
+                    radius = 2,
+                    opacity = 0.5,
+                    color = ~pal(sector_label),
+                    popup = ~paste0("<b>", htmltools::htmlEscape(name), "</b>",
+                                   "<br/>", sector_label)) %>%
+  addLayersControl(baseGroups = c("OSM", "Carto", "Esri"),
+                   overlayGroups = c("Public", "Private", "For-Profit", "Wealthy Zipcodes"))
+
+```
+
+  

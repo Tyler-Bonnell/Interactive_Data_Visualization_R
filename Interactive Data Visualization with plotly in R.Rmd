@@ -1,0 +1,215 @@
+---
+title: "Interactive Data Visualization with plotly in R"
+author: "Tyler Bonnell"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list = ls())
+
+pacman::p_load(
+  plotly,
+  tidyverse,
+  dplyr,
+  ggplot2,
+  forcats,
+  data.table,
+  RColorBrewer
+)
+
+vgsales <- read_csv("data/Plotly I/vgsales.csv")
+
+vgsales2016 <- vgsales %>%
+  filter(Year == 2016) %>%
+  drop_na()
+
+wine <- read_csv("Data/Plotly I/wine_data/wine.csv")
+winequality <- read_csv("Data/Plotly I/wine_data/winequality.csv")
+
+
+```
+
+
+# Chapter 1: Introduction
+
+```{r, Chapter 1}
+
+# Univariate Graphics (Histograms, Bar Charts)
+
+## Bar Chart
+vgsales %>%
+  drop_na() %>%
+  plot_ly(x = ~Critic_Score) %>%
+  add_histogram(xbins = list(start = 0, end = 100, size = 10),
+                color = I("navy"), opacity = 0.5)
+
+## Histogram
+vgsales %>%
+  drop_na() %>%
+  count(Genre, name = "Count") %>%
+  mutate(Genre = forcats::fct_reorder(Genre, Count, .desc = TRUE)) %>% # Reorder Genre by Count (descending order: Large > Small)
+  plot_ly(x = ~Genre, y = ~Count) %>%
+  add_bars()
+
+
+# Bivariate Graphics (Scatter Plots, Stacked Bar Charts, and Box Plots)
+
+## Scatter Plot
+vgsales %>%
+  drop_na() %>%
+  plot_ly(x = ~Critic_Score, y= ~User_Score) %>%
+  add_markers(marker = list(size = 4, symbol = "diamond"))
+
+## Stacked Bar Charts (Counts & Proportions)
+vgsales2016 %>%
+  count(Genre, Rating, name = "Count") %>%
+  plot_ly(x = ~Genre, y= ~Count, color = ~Rating) %>%
+  add_bars() %>%
+  layout(barmode = "stack")
+
+vgsales2016 %>%
+  count(Genre, Rating, name = "Count") %>%
+  group_by(Genre) %>%
+  mutate(prop = Count/sum(Count),
+         Rating = factor(Rating,
+                         levels = c("E", "E10+", "T", "M"),
+                         labels = c("E", "E10+", "T", "M"))) %>%
+  plot_ly(x = ~Genre, y= ~prop, color = ~Rating) %>%
+  add_bars() %>%
+  layout(barmode = "stack")
+
+# Box Plots
+vgsales2016 %>%
+  mutate(Genre = forcats::fct_reorder(Genre, Global_Sales, .desc=FALSE)) %>%
+  plot_ly(x= ~Global_Sales, y=~Genre) %>%
+  add_boxplot()
+
+```
+
+
+# Chapter 2: Styling & Customizing Graphs
+- Customize traces
+- Thoughtful use of colors
+
+```{r, Chapter 2}
+
+RColorBrewer::display.brewer.all()
+
+# Manual Palettes
+# color = argument accepts R color vectors! i.e; add_markers(colors = c("orange", "blue", "green"))... can also use HEX, rgb/rgba
+
+vgsales2016 %>%
+  plot_ly(x = ~Critic_Score, y = ~User_Score,
+          color = ~log(User_Count)) %>% ## can also use symbol = argument to differentiate categories by shape as well as color
+  add_markers(colors = "Blues") # Palette from RColorBrewer
+
+
+
+# Hover templates (w/ Customized Hover Labels)
+vgsales2016 %>%
+  plot_ly(x= ~NA_Sales, y= ~EU_Sales,
+          hoverinfo = "text",
+          text = ~paste("Video Game Name:", Name, "<br>",
+                        "North America Sales:", NA_Sales, "<br>",
+                        "Europe Sales:", EU_Sales, "<br>",
+                        "Global Sales:", Global_Sales)) %>%
+  add_markers(marker = list(opacity = 0.5))
+
+
+# Customizing Layouts
+# layout() w/ arguments: axes, legend, canvas, size
+
+vgsales %>%
+  count(Year, Platform, 
+        name = "Total_Sales") %>%
+  filter(Platform %in% c("PS", "PS2", "PS3", "PS4",
+                         "XB", "X360", "XOne")) %>%
+  plot_ly(x= ~Year, y= ~Total_Sales, 
+          color= ~Platform,
+          hoverinfo = "text", # Allows pop ups to be defined by text= argument
+          text = ~paste("Year:", Year, "<br>",
+                        "Platform:", Platform, "<br>",
+                        "Total Sales (Global):", Total_Sales, "million units")) %>%
+  add_lines() %>%
+  layout(yaxis = list(title = "Global sales (millions of units)", zeroline = FALSE),
+         xaxis = list(title = "Year", 
+                      zeroline = FALSE, # Removes x/y = 0 line
+                      showgrid = FALSE), # Removes y axis grid lines
+         title = "Global Sales of Video Games by Platform Over Time",
+         plot_bgcolor = "#F4F4F4", # Plot background
+         paper_bgcolor = "#E3F2F3") # Outside of plot (paper) background
+  
+```
+
+
+# Chapter 3: Advanced Charts
+- Adding a loess smoother to a scatter plot
+- Layering density plots
+
+```{r, Chapter 3}
+
+# Adding a LOESS Smoother to a scatter plot
+
+## First fit potential models
+linear_model <- lm(User_Score ~ Critic_Score, data = vgsales2016)
+polynomial_model <- lm(User_Score ~ poly(Critic_Score,2), data = vgsales2016)
+loess_model <- loess(User_Score ~ Critic_Score, data = vgsales2016, span = 1.5)
+
+## Second, plot data
+vgsales2016 %>%
+  select(User_Score, Critic_Score) %>%
+  mutate(User_Score = as.numeric(User_Score)) %>%
+   plot_ly(x = ~Critic_Score, y = ~User_Score,
+           hoverinfo = "text",
+           text = ~paste("Critic Score:", Critic_Score, "<br>",
+                         "User Score:", User_Score)) %>%
+   add_markers(showlegend = FALSE, 
+               opacity = 0.75) %>%
+  
+  ## Third, add fitted models  to plotted data
+  
+   add_lines(y = ~fitted(linear_model), name = "Linear") %>% # fitted() extracts fitted values from generated models (will allow plotting models)
+   add_lines(y = ~fitted(polynomial_model), name = "Polynomial") %>%
+   add_lines(y = ~fitted(loess_model), name = "LOESS") %>%
+  layout(title = "Critic Score Versus User Score of 2016 Video Games",
+         xaxis = list(title = "Critic Score (Out of 100)"),
+         yaxis = list(title = "User Score (Out of 10)"))
+
+
+
+# Overlayed Density Plots (Examining Critic Scores for 3 Video Game Publishers)
+
+# First, compute density curves
+publisher_list <- vgsales2016 %>%
+  filter(Publisher %in% c("Activision", "Electronic Arts", "Nintendo"))%>% 
+  split(., f = .$Publisher) # Split DF into 3 subsetted DFs based on Publisher (stored as elements of publisher_list) Source: https://www.r-bloggers.com/2021/12/how-to-split-vector-and-data-frame-in-r/
+
+for(i in seq_along(publisher_list)){
+  density_list[[i]] <- density(publisher_list[[i]]$Critic_Score, na.rm = TRUE) # Compute Density curves
+}
+
+# Second, Plot Density Curves
+plot_ly() %>%
+  add_lines(x = ~density_list[[1]]$x, y = ~density_list[[1]]$y, name = "Activision", fill = 'tozeroy') %>%
+  add_lines(x = ~density_list[[2]]$x, y = ~density_list[[2]]$y, name = "Electronic Arts", fill = 'tozeroy') %>%
+  add_lines(x = ~density_list[[3]]$x, y = ~density_list[[3]]$y, name = "Nintendo", fill = 'tozeroy') %>%
+  layout(xaxis = list(title = 'Critic Score'),
+         yaxis = list(title = 'Density'))
+
+
+# Faceting plotly graphs
+
+
+ 
+
+```
+
+
+# Chapter 4: Case Study
+
+```{r, Chapter 4}
+
+```
