@@ -29,6 +29,19 @@ vgsales2016 <- vgsales %>%
 wine <- read_csv("Data/Plotly I/wine_data/wine.csv")
 winequality <- read_csv("Data/Plotly I/wine_data/winequality.csv")
 
+## Chapter 4: Case Study
+temp <- list.files("Data/Plotly I/election_data/", pattern="*.csv")
+
+for (i in 1:length(temp)){
+    assign(str_remove(temp[i], pattern = ".csv"), read_csv(paste0("Data/Plotly I/election_data/",temp[i])))
+}
+
+turnout <- TurnoutRates
+fundraising <- fec_candidate_summary_2018
+
+
+
+
 
 ```
 
@@ -85,7 +98,9 @@ vgsales2016 %>%
 vgsales2016 %>%
   mutate(Genre = forcats::fct_reorder(Genre, Global_Sales, .desc=FALSE)) %>%
   plot_ly(x= ~Global_Sales, y=~Genre) %>%
-  add_boxplot()
+  add_boxplot() %>%
+  layout(title = "Global Video Game Sales (by Genre)",
+         xaxis = list(title = "Global Sales (in millions of units)"))
 
 ```
 
@@ -187,6 +202,8 @@ publisher_list <- vgsales2016 %>%
   filter(Publisher %in% c("Activision", "Electronic Arts", "Nintendo"))%>% 
   split(., f = .$Publisher) # Split DF into 3 subsetted DFs based on Publisher (stored as elements of publisher_list) Source: https://www.r-bloggers.com/2021/12/how-to-split-vector-and-data-frame-in-r/
 
+density_list <- list()
+
 for(i in seq_along(publisher_list)){
   density_list[[i]] <- density(publisher_list[[i]]$Critic_Score, na.rm = TRUE) # Compute Density curves
 }
@@ -202,14 +219,210 @@ plot_ly() %>%
 
 # Faceting plotly graphs
 
+## Manually 
 
+bar <- vgsales2016 %>%
+  filter(Publisher %in% c("Nintendo", "Electronic Arts", "Activision", "Sony Computer Entertainment", "Ubisoft")) %>%
+  group_by(Publisher) %>%
+  mutate(Total_Sales = sum(Global_Sales)) %>%
+  ungroup() %>%
+  mutate(Publisher = forcats::fct_reorder(Publisher, Total_Sales, .desc = TRUE)) %>%
+  plot_ly(data = ., x= ~Publisher, y = ~Total_Sales, color= ~Publisher) %>%
+  add_bars(name = ~Publisher)
+
+ts <- vgsales %>%
+  drop_na() %>%
+    filter(Publisher %in% c("Nintendo", "Electronic Arts", "Activision", "Sony Computer Entertainment", "Ubisoft")) %>%
+    group_by(Publisher, Year) %>%
+    summarize(Total_Sales = sum(Global_Sales)) %>%
+    plot_ly(data = ., x= ~Year, y = ~Total_Sales, color= ~Publisher) %>%
+    add_lines(name = ~Publisher)
+
+subplot <- subplot(bar, ts, 
+                  nrows = 1, shareY = FALSE, shareX = FALSE)
+
+rm(ts, bar)
+
+## Polishing Axis Titles: You can adjust each subplot axis titles individually
+
+subplot %>% 
+  layout(xaxis = list(title = ""),
+         xaxis2 = list(title = "Year"),
+         yaxis = list(title = "Global Sales (M units)"),
+         yaxis2 = list(title = "Global Sales (M units)"),
+         margin = 0.2)
+
+
+## Automatically: use group_by() and do():
+
+vgsales2016 %>%
+  group_by(Platform) %>%
+  do(
+    plot = plot_ly(data = ., x = ~Critic_Score, y = ~User_Score) %>%
+      add_markers(name = ~Platform)
+  ) %>%
+  subplot(nrows = 3, shareY = TRUE, shareX = TRUE)
+
+
+
+# Scatter Plot Matrices
+# add_trace(type = 'splom') relates to scatter plot matrix template
+
+# Question: What is the relationship between North American, EU, and Japan video game sales? (Colored by whether the publisher was Nintendo or not)
+
+splom <- vgsales2016 %>%
+  mutate(nintendo = ifelse(Publisher == "Nintendo", "Nintendo", "Other"))%>%
+  plot_ly(color = ~nintendo) %>%
+  add_trace(
+    type = "splom",
+    dimensions = list(
+      list(label = "N. America", values = ~NA_Sales),
+      list(label = "Europe", values= ~EU_Sales),
+      list(label = "Japan", values = ~JP_Sales)
+    )
+  )
  
+## Tweaking Appearance of splom
+
+## Delete diagonals
+splom %>%
+  style(diagonal = list(visible = FALSE))
+
+## Delete upper half
+splom %>%
+  style(showupperhalf = FALSE,
+        diagonal = list(visible = FALSE))
+
+## Delete lower half
+splom %>%
+  style(showlowerhalf = FALSE)
+
+
+## Binned scatterplots
+## Address the overs aturation of scatter plots for LARGE data sets.
+## Create a uniform tile space on x-y plane, and count # of points falling within a tile (# of points within each style is represented by a color tile)
+
+vgsales %>% #16k rows
+  filter(User_Score != "tbd") %>%
+  plot_ly(data =., x= ~Critic_Score, y = ~User_Score) %>%
+  add_histogram2d(nbinsx = 50, nbinsy = 50)
+  
 
 ```
 
 
-# Chapter 4: Case Study
+# Chapter 4: Case Study (2018 Midterm Election)
 
 ```{r, Chapter 4}
+
+# Remove variables from previous chapters
+rm(list = ls()[!ls() %in% c("fundraising", "fl_boundaries", "fl_results", "senate_winners", "turnout")])
+
+# Compare 2014 vs 2018 Voter Turnout for all states
+turnout %>%
+  plot_ly(data=., x= ~turnout2014, y= ~turnout2018) %>%
+  add_markers() %>%
+  layout(xaxis = list(title = "2014 voter turnout"),
+         yaxis = list(title = "2018 voter turnout")) %>%
+  add_lines(x = c(0.25, 0.6), y = c(0.25, 0.6)) %>% # Add a reference line to show whether voter turnout increased from 2014 to 2018
+  layout(showlegend = FALSE) # remove trend line from legend
+
+
+# Observe Voter Turnout (Proportion) by the Top 15 State (by voter turnout)
+turnout %>%
+  slice_max(order_by = turnout2018, n = 15, with_ties = FALSE) %>%
+  plot_ly(data = ., x= ~turnout2018, y= ~fct_reorder(state, turnout2018)) %>%
+  add_markers() %>%
+  layout(xaxis = list(title = "Eligible voter turnout"),
+         yaxis = list(title = "State", type = "category"))
+
+# Histogram of spending on Senate Races
+fundraising %>%
+  filter(office == "S") %>%
+  plot_ly(x = ~receipts) %>%
+  add_histogram() %>%
+  layout(title = "Fundraising for 2018 Senate races",
+         xaxis = list(title = "Total contributions received"))
+
+# Identifying the 15 Senate Campaigns that Raised the Most Money in 2018
+fundraising %>%
+  filter(office == "S") %>%
+  mutate(name = stringr::str_to_title(name)) %>%
+  slice_max(order_by = receipts, n=15, with_ties = FALSE) %>%
+  plot_ly(x = ~receipts, y= ~fct_reorder(state, receipts),
+          color= ~fct_drop(party),
+          hoverinfo = "text",
+          text = ~paste("Candidate:", name, "<br>",
+                        "Party:", party, "<br>",
+                        "Receipts:", "$", prettyNum(receipts, big.mark = ","), "<br>",
+                        "Disbursements:", "$", prettyNum(disbursement, big.mark = ","))) %>%
+  add_markers(colors = c("blue", "red")) %>%
+  layout(title = "Senate Race Spending (by Party)",
+         yaxis = list(title = "State", type = "category"),
+         xaxis = list(title = "Senate Campaign Funding (in Millions of Dollars)"))
+
+# Mapping the results: Chloropleth maps
+
+# Examine states with the biggest change in voter turnout from 2014 to 2018
+turnout %>%
+  mutate(change = turnout2018 - turnout2014) %>%
+  plot_geo(locationmode = "USA-states",
+           hoverinfo = "text",
+           text = ~paste(state, "<br>",
+                         "Change in Voter Turnout:", 
+                         ifelse(change > 0, paste0("+",round(change*100,3),"%"),
+                                paste0(round(change*100,3),"%")))) %>%
+  add_trace(z= ~(change*100), # sets the color values
+            locations= ~state.abbr) %>% # matches row data to polygons
+  layout(geo = list(scope = "usa")) %>%
+  colorbar(title = "Percent Change from 2014 to 2018")# Restrict map to USA only
+
+# Mapping Senate Winners
+senate_winners %>%
+  plot_geo(locationmode = "USA-states") %>%
+  add_trace(z= ~as.numeric(party),
+            locations = ~state,
+            colors = c("dodgerblue", "mediumseagreen", "tomato"),
+            hoverinfo = "text",
+            text = ~paste("Candidate:", name, "<br>",
+                  "Party:", party, "<br>",
+                  "% vote:", round(pct.vote, 1))) %>%
+              layout(geo = list(scope = "usa")) %>%
+              hide_colorbar()
+
+
+# Mapping Senate Winners (Pt II)
+# Define the layout settings to polish the axes
+map_axes <- list(title = "", showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE)
+
+# Apply the layout to both axes
+senate_map %>%
+  group_by(group) %>%
+  plot_ly(x = ~long, y = ~lat, color = ~party, split = ~region,
+          colors = c("dodgerblue", "mediumseagreen", "tomato")) %>%
+  add_polygons(line = list(width = 0.4, color = toRGB("gray60")), showlegend = FALSE) %>%
+  layout(xaxis = map_axes, yaxis = map_axes)
+
+
+## Florida Map
+
+# Join the fl_boundaries and fl_results data frames
+senate_vote <- left_join(fl_boundaries, fl_results, by = c("subregion" = "CountyName"))
+
+# Specify the axis settings to polish the map
+map_axes <- list(title="", zerolines=FALSE,showgrid=FALSE, showticklabels=FALSE)
+
+# Create a polished county-level choropleth map of Pctvote
+senate_vote %>%
+  group_by(group) %>%
+  plot_ly(x = ~long, y = ~lat, 
+          color = ~Pctvote,
+          split = ~subregion,
+          hoverinfo = "text",
+          text = ~paste(str_to_title(subregion), "<br>",
+                        "% Voted for Rick Scott:", round(Pctvote*100,2))) %>%
+  add_polygons(line = list(width = 0.4), showlegend = FALSE, colors = c("blue", "red")) %>%
+  layout(xaxis = map_axes, yaxis = map_axes) %>%
+  colorbar(title="Percent Voted for Rick Scott")
 
 ```
