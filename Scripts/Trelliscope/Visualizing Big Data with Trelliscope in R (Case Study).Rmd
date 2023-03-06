@@ -1,0 +1,34 @@
+---
+title: "Visualizing Big Data with Trelliscope in R"
+author: "Tyler Bonnell"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list = ls())
+
+pacman::p_load(trelliscopejs,
+               ggplot2,
+               plotly,
+               purrr,
+               tidyverse,
+               gapminder)
+
+load("Data/Trelliscope/route_hod.Rdata")
+
+
+```
+
+# Trelliscope in R (Case Study)
+
+```{r}
+
+
+
+
+```
+
+

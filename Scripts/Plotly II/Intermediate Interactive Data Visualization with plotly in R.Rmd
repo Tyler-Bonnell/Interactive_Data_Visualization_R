@@ -1,0 +1,217 @@
+---
+title: "Intermediate Interactive Data Visualization with plotly in R"
+author: "Tyler Bonnell"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+rm(list = ls())
+
+pacman::p_load(plotly,
+               crosstalk,
+               tidyverse)
+
+launches <- read_csv("Data/Plotly II/launches.csv")
+us_economy <- read_csv("Data/Plotly II/state_economic_data.csv")
+```
+
+# Chapter 1: Introduction & Review of Plotly
+
+```{r, Chapter 1}
+
+# Using symbols to reflect groups:
+
+# happy %>%
+#   plot_ly(x = ~life.expectancy, y = ~happiness) %>%
+#   add_markers(symbol = ~income, symbols = c("circle-open","square-open","star-open","x-thin-open"))
+
+# Bubble Charts (size of marker proportional to population)
+us_economy %>%
+  filter(year == 2017) %>%
+  plot_ly(x= ~gdp, y= ~house_price) %>%
+  add_markers(size= ~population,
+              color = ~region,
+              symbol= ~region,
+              marker = list(sizemode = "diameter", 
+                            sizeref = 1))  # sizeref > 1 will make all symbols smaller. 
+
+```
+
+# Chapter 2: Animating Graphics
+
+Plotly Animations: Keyframe animations -- a frame is a single interactive plot at one time point. These frames are then combined to create a smooth animation.
+
+- add_markers(frame =., )... frame = argument uses a variable to define each frame and determine how frames will be combined into an animation.
+- add_markers(frame=., ids =., )... ids = argument ensures that a particular variable value (say country == "Belgium") will always be represented by the same symbol (across the various frames) in the animation. This is relevant if the format and/or ordering of the data changes between frames (i.e; over time). 
+
+Without setting ids =. , the marker symbols correspond to the row indexes (i.e; the 17th marker is for data in the 17th row) in the underlying data frames. If the format or ordering of the data gets changed between frames -- it could cause sudden jumps in the animation that does not accurately reflect the data (2001: 17th row and marker == "Belgium". In 2002, new countries are added, 2002: 17th row and marker == "Bangladesh". Unfortunately, the 17th marker would jump eratically and not accurately reflect what is happening in Belgium).
+
+## Polishing Animations:
+- animation_opts()
+- frame = , specifies milliseconds between display of frames
+- transition = frame (default), time used to transition between frames. If transition < frame, then the animation will "Pause between frames" aka present static graphics and then transition between them.
+- easing = "linear" (default), type of transition used between frames. 
+- redraw = TRUE (default), should the graphic be entirely re-drawn upon transition between frames? 
+
+## Animation slider options
+- animation_slider()
+- hide = TRUE (remove the slider)
+- currentvalue = list(prefix=NULL) -- edit slider text: remove slider text prefix.
+    - currentvalue = list(font = list(color = "black", size = 40))
+
+
+```{r, Chapter 2}
+
+# Animated scatterplot
+us_economy %>%
+  plot_ly(x= ~gdp, y = ~house_price) %>%
+  add_markers(size = ~population,
+              color = ~region,
+              frame = ~year,
+              ids= ~state,
+              marker = list(sizemode = "diameter"))
+
+# Polishing animations
+us_economy %>%
+  plot_ly(x= ~gdp, y= ~house_price,
+          hoverinfo = "text",
+          text = ~paste0(state, " (",year,") ","<br>",
+                         "Average House Price: ","<b>","$",prettyNum(round(house_price*1000,0), big.mark=","),"<b>")) %>%
+  add_markers(size= ~population,
+              color = ~region,
+              frame = ~year,
+              ids= ~state,
+              marker = list(sizemode = "diameter",
+                            sizeref = 2)) %>%
+  layout(
+    xaxis = list(title = "Real GDP (millions USD)", type = "log"),
+    yaxis = list(title = "Housing price index")) %>%
+  animation_opts(frame = 1250,
+                 easing = "bounce",
+                 redraw = TRUE) %>%
+  animation_slider(currentvalue = list(prefix = NULL,
+                                       font = list(color = "black", size= 24)))
+
+
+## Adding Layers: Add Updating Year Text Layer and Remove Slider
+us_economy %>%
+  plot_ly(x= ~gdp, y= ~house_price,
+          hoverinfo = "text",
+          text = ~paste0(state, " (",year,") ","<br>",
+                         "Average House Price: ","<b>","$",prettyNum(round(house_price*1000,0), big.mark=","),"<b>")) %>%
+  add_text(x = 200000, y = 450, text = ~year, frame = ~year, ids = ~1, #ids = ~1 (to prevent 2004 from flying in very weird...)
+           textfont = list(color = toRGB("gray80"), size = 120)) %>% ## ADD TEXT LAYER SHOWING THE YEAR WITHIN THE GRAPH
+  add_markers(size= ~population,
+              color = ~region,
+              frame = ~year,
+              ids= ~state,
+              marker = list(sizemode = "diameter",
+                            sizeref = 2)) %>%
+  layout(
+    xaxis = list(title = "Real GDP (millions USD)", type = "log"),
+    yaxis = list(title = "Housing price index")) %>%
+  animation_opts(frame = 1250,
+                 easing = "linear",
+                 redraw = TRUE) %>%
+  animation_slider(hide=TRUE)
+
+```
+
+# Chapter 3: Linking Graphics
+
+```{r, Chapter 3}
+
+## LINKED DOT PLOTS
+
+us2017 <- us_economy %>%
+  filter(year == 2017) %>%
+  mutate(employ_pcnt = round((employment/(population*1000))*100,1)) %>%
+  group_by(state, year) %>%
+  slice_head()
+
+# Create a SharedData object from us2017
+shared_us <- SharedData$new(us2017)
+
+# Create a scatterplot of house_price vs. home_owners
+p1 <- shared_us %>%
+  plot_ly(x = ~home_owners, y = ~house_price,
+          hoverinfo = "text",
+          text = ~paste0("State: ", state, "<br>",
+                         "Home Ownership Percent: ",home_owners,"%","<br>",
+                         "House Price: ","$",prettyNum(round(house_price*1000), big.mark = ","),"<br>")) %>%
+  add_markers(color = ~region) %>%
+  layout(xaxis = list(title = "Home Ownership Percent"),
+         yaxis = list(title = "House Price (in $1,000)"))
+ 
+# Scatterplot of house_price vs. employment rate
+p2 <- shared_us %>%
+  plot_ly(x = ~employ_pcnt, y = ~house_price,
+          hoverinfo = "text",
+          text = ~ paste0("State: ", state,"<br>",
+                          "Employment Percent: ",employ_pcnt,"%","<br>",
+                          "House Price: ","$",prettyNum(round(house_price*1000), big.mark = ","),"<br>")) %>%
+  add_markers(color = ~region) %>%
+  layout(xaxis = list(title = "Employment Percent"),
+         yaxis = list(title = "House Price (in $1,000)"))
+  
+# Polish the linked scatterplots
+subplot(p1, p2,
+        titleX = TRUE, shareY = TRUE) %>% 
+  hide_legend() %>%
+  highlight(on = "plotly_hover")
+
+# highlight() just for a double click
+# highlight(on = "plotly_selected") to highlight anything captured by box or lasso selection
+
+
+
+
+## LINKED DOT PLOT - TIMESERIES
+
+# Create a shared data object keyed by region
+shared_region <- crosstalk::SharedData$new(data= us_economy, key= ~ region)
+  
+# Create a dotplot of avg house_price by region in 2017
+dp_chart <- shared_region %>%
+  plot_ly(hoverinfo = "text",
+          text= ~paste0("Region: ",region,"<br>",
+                        "Average Regional House Price: $",prettyNum(round(avg.hpi*1000),big.mark=","))) %>%
+   filter(year == 2017) %>%
+  group_by(region) %>%
+  summarize(avg.hpi = mean(house_price, na.rm = TRUE)) %>%
+  add_markers(x = ~avg.hpi*1000, y = ~region, color= ~region) %>%
+  layout(yaxis = list(title = ""),
+         xaxis = list(title = "Average Regional House Price"))
+  
+# Code for time series plot
+ts_chart <- shared_region %>%
+  plot_ly(x = ~year, y = ~house_price*1000,
+          hoverinfo = "text",
+          text= ~paste0("State: ",state,"<br>",
+                        "Region: ",region,"<br>",
+                        "House Price: $",prettyNum(round(house_price*1000),big.mark=","))) %>%
+  group_by(state) %>%
+  add_lines(color= ~region) %>%
+  layout(xaxis = list(title = "Year"),
+         yaxis = list(title = "House Price"))
+
+subplot(dp_chart, ts_chart,
+        titleX = TRUE, titleY= TRUE, margin = 0.05) %>%
+  hide_legend() %>%
+  highlight(on = "plotly_hover")
+
+
+
+
+
+
+```
+
+# Chapter 4: Case Study (Space Launches)
+
+```{r, Chapter 4}
+
+```

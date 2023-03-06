@@ -1,0 +1,148 @@
+---
+title: "Visualizing Big Data with Trelliscope in R"
+author: "Tyler Bonnell"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+pacman::p_load(trelliscopejs,
+               ggplot2,
+               plotly,
+               purrr,
+               tidyverse,
+               gapminder)
+```
+
+# Trelliscope in R
+
+## Chapter 2: ggplot2 + TrelliscopeJS
+
+```{r Chapter 2}
+# Create the plot
+ggplot(gapminder, aes(year, lifeExp)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_trelliscope(~ country + continent, # ~ var1 + var2 (provides labelling of facets by 2 vars: Austrailia Oceania)
+    name = "lifeExp_by_country",
+    desc = "Life expectancy vs. year for 142 countries.",
+    nrow = 1, ncol = 2,
+    # Set the scales
+    scales = "sliced", # scales = "same" (all same scales), "sliced" (all have the same range values, but diff start/end points), "free"
+    # Specify automatic cognistics
+    auto_cog = TRUE, # Provides additional ways to slice and view the data
+    as_plotly = TRUE) # Converts each panel for ggplot2 to plotly
+
+```
+
+```{r Adding Custom Cognostics}
+
+space_to_dash <- function(x) gsub(" ", "-", x)
+
+# Group by country and create the two new variables
+gap <- gapminder %>%
+  group_by(country) %>%
+  mutate(
+    delta_lifeExp = tail(lifeExp, 1) - head(lifeExp, 1),
+    ihme_link = paste0("http://www.healthdata.org/", space_to_dash(country)))
+
+# Add the description
+gap$delta_lifeExp <- cog(gap$delta_lifeExp, desc = "Overall change in life expectancy")
+# Specify the default label
+gap$ihme_link <- cog(gap$ihme_link, default_label = TRUE) # adds an ihme country-specific link as a default label for all panels
+
+ggplot(gap, aes(year, lifeExp)) +
+  geom_point() +
+  facet_trelliscope(~ country + continent,
+    name = "lifeExp_by_country",
+    desc = "Life expectancy vs. year.",
+    nrow = 1, ncol = 2,
+    scales = c("same", "sliced"))
+
+```
+
+## Chapter 3: Trelliscope in the Tidyverse
+
+```{r Chapter 3}
+
+stocks <- read_rds("Data/Trelliscope/nsdq2016.rds")
+
+# Nest stocks by symbol
+by_symbol <- stocks %>%
+  ungroup() %>%
+  group_by(symbol) %>%
+  nest()
+
+# Create new column (Get the minimum # of trades for each stock)
+min_volume_fn <- function(x) min(x$volume) # Find the lowest # of trades ("volume")
+
+by_symbol_min <- by_symbol %>%
+  mutate(min_volume = map_dbl(data, min_volume_fn)) ## purr::map_*() typically require data, and then the name of a function to apply to that data
+
+# Create Open-High-Low-Close Plots
+ohlc_plot <- function(d) {
+  plot_ly(d, x = ~date, type = "ohlc",
+    open = ~open, close = ~close,
+    high = ~high, low = ~low)
+}
+
+by_symbol_plot <- by_symbol %>% 
+  ungroup() %>% 
+  mutate(panel = map_plot(data, ohlc_plot)) # creates a plotly s3 object contained within a list column of the df
+
+trelliscope(by_symbol_plot, name = "ohlc_top500")
+
+```
+
+```{r Cognostics From Nested Data Frames}
+
+annual_return <- function(x){100 * (tail(x$close, 1) - head(x$open, 1)) / head(x$open, 1)}
+
+# Compute by_symbol_avg
+by_symbol_avg <- mutate(by_symbol,
+  stats = map(data, function(x) {
+    tibble(
+      mean_close = mean(x$close),
+      mean_volume = mean(x$volume),
+      annual_return = annual_return(x)
+    )
+  }))
+
+```
+
+```{r Trelliscope Options}
+
+trelliscope(by_symbol_plot,
+desc = "Stock Trelliscope", 
+name= "ohlc_top500", height = 300, width = 600)
+
+
+```
+
+```{r Trelliscope with Pokemon Images}
+
+load("Data/Trelliscope/pokemon.RData")
+
+# Create a new data frame to use for plotting
+pokemon2 <- pokemon %>%
+  # Reduce the variables in the dataset
+  select(pokemon, type_1, attack, generation_id, url_image) %>%
+  mutate(
+    # Respecify pokemon
+    pokemon = cog(val = pokemon, default_label = TRUE),
+    # Create panel variable
+    panel = img_panel(url_image)
+  )
+
+# Create the display
+trelliscope(pokemon2, name = "pokemon", nrow = 3, ncol = 6)
+
+```
+
+## Chapter 4: Case Study
+
+```{r}
+
+```

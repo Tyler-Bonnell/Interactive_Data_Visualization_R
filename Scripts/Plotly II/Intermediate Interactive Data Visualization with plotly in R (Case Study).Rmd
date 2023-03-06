@@ -1,0 +1,154 @@
+---
+title: "Intermediate Interactive Data Visualization with plotly in R (Case Study)"
+author: "Tyler Bonnell"
+date: "`r Sys.Date()`"
+output: html_document:
+  code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+## Install/Load Packages
+pacman::p_load(tidyverse,
+               plotly, 
+               crosstalk,
+               dplyr,
+               tidyr,
+               purrr)
+
+## Load Raw Data
+launches <- read_csv("Data/Plotly II/launches.csv")
+```
+
+# Exploring the Space Race
+
+### Key Variables
+
+-  launch_year = Year of launch
+-  agency = Launching agency
+-  state_code = Launching agency's state
+-  category = Success (O) or failure (F)
+-  agency_type = Type of agency
+-  tag = Harvard/COSPAR id of launch
+-  JD = Julian date of launch
+-  type = Launch vehicle
+-  variant = Variant of launch vehicle
+-  mission = Mission
+
+```{r launches Key Variables}
+glimpse(launches)
+```
+
+
+## (1) Launches Over Time
+```{r Launches Over Time}
+
+### table of launches by year
+launches_by_year <- launches %>%
+  count(launch_year)
+
+# create a line chart of launches over time
+launches_by_year %>%
+  plot_ly(x = ~launch_year, y = ~n) %>%
+  add_lines(fill = "tozeroy") %>% # adds shading below the line
+  layout(
+    xaxis = list(title = "Year"), 
+    yaxis = list(title = "Launches")
+  )
+
+# create a bar chart of launches over time
+# launches_by_year %>%
+#   plot_ly(x = ~launch_year, y = ~n) %>%
+#   add_bars() %>%
+#   layout(
+#     xaxis = list(title = "Year"), 
+#     yaxis = list(title = "Launches")
+#   )
+
+
+```
+
+## (2) Space Race Timeline
+```{r Space Race Timeline}
+
+# table of launches by year
+state_launches <- launches %>% 
+  filter(agency_type == "state") %>% 
+  count(launch_year, state_code)
+
+# create a ShareData object for plotting
+shared_launches <- state_launches %>% 
+  SharedData$new(key = ~state_code)
+
+# Create a line chart for launches by state, with highlighting
+shared_launches %>%
+  plot_ly(x = ~launch_year, y= ~n, color= ~state_code) %>%
+  add_lines() %>%
+  highlight()
+
+```
+
+## (3) State vs Private Launches
+```{r State vs Private Launches}
+# table of launches by year and agency type
+launches_by_year <- launches %>% count(launch_year, agency_type)
+
+# create a ShareData object for plotting
+shared_launches <- launches_by_year %>% 
+  SharedData$new(key = ~agency_type)
+
+# create a line chart displaying launches by agency type, with highlighting
+shared_launches %>%
+  plot_ly(x= ~launch_year, y= ~n, color= ~agency_type) %>%
+  add_lines() %>%
+  highlight()
+
+```
+
+## (4: Animated) Launches Over Time by State
+```{r Animated Launches Over Time, eval = FALSE}
+# Complete the state_launches data set
+annual_launches <- state_launches %>%
+  count(launch_year, state_code) %>%
+  complete(state_code, launch_year, fill = list(n = 0))
+
+# Create the cumulative data set
+cumulative_launches <- annual_launches %>%
+  split(f = .$launch_year) %>%
+  accumulate(., ~bind_rows(.x, .y)) %>%
+  bind_rows(.id = "frame")
+
+# Create the cumulative animation
+cumulative_launches %>%
+  plot_ly(x = ~launch_year, y = ~n, color = ~state_code) %>%
+  add_lines(frame = ~frame, ids= ~state_code)
+
+```
+
+## (5: Animated) State vs Private Launches
+```{r, Animated State vs Private Launches}
+
+## NOT IN DATA CAMP
+private_launches <- launches %>% 
+  filter(agency_type == "private") %>%
+  rename(year = launch_year, agency_name = agency)
+
+# Complete the private_launches data set
+annual_launches <- private_launches %>%
+  count(year, agency_name) %>%
+  complete(agency_name, year, fill = list(n = 0))
+
+# Create the cumulative data set
+cumulative_launches <- annual_launches %>%
+  split(f = .$year) %>%
+  accumulate(., ~bind_rows(.x, .y)) %>%
+  bind_rows(.id = "frame")
+
+# Create the cumulative animation
+cumulative_launches %>%
+  plot_ly(x = ~year, y = ~n, color = ~agency_name) %>%
+  add_lines(frame = ~frame, ids = ~agency_name)
+
+```
+
