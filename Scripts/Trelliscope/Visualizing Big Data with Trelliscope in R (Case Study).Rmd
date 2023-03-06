@@ -26,7 +26,28 @@ load("Data/Trelliscope/route_hod.Rdata")
 
 ```{r}
 
+# Function to construct a Google maps URL with cycling directions
+make_gmap_url <- function(start_lat, start_lon, end_lat, end_lon) {
+  paste0("https://www.google.com/maps/dir/?api=1",
+    "&origin=", start_lat, ",", start_lon,
+    "&destination=", end_lat, ",", end_lon,
+    "&travelmode=bicycling")
+}
 
+route_hod_updated <- route_hod %>% 
+ungroup() %>%
+  group_by(start_station_code, end_station_code) %>%
+  mutate(
+    tot_rides = sum(n),
+    weekday_diff = mean(n[weekday == "workweek"]) - mean(n[weekday == "weekend"]) ,
+    map_url = make_gmap_url(start_lat, start_lon, end_lat, end_lon))
+
+
+# Create the plot
+ggplot(route_hod_updated, aes(x= start_hod, y= n, color = weekday)) +
+  geom_point(size = 3) +
+  facet_trelliscope(~ start_station_name + end_station_name, nrow = 2, ncol = 4) +
+  theme(legend.position = "none")
 
 
 ```
